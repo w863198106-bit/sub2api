@@ -1,8 +1,9 @@
 # =============================================================================
-# Sub2API Multi-Stage Dockerfile (Super-Safe Version by Gemini)
+# Sub2API Multi-Stage Dockerfile (Hajime's Last Stand)
 # =============================================================================
 
-ARG NODE_IMAGE=node:24-alpine
+# 【修改点】：前端改用 compatibility 更强的 bullseye-slim，彻底解决 esbuild 编译问题
+ARG NODE_IMAGE=node:20-bullseye-slim
 ARG GOLANG_IMAGE=golang:1.26.3-alpine
 ARG ALPINE_IMAGE=alpine:3.21
 ARG POSTGRES_IMAGE=postgres:18-alpine
@@ -16,13 +17,16 @@ FROM ${NODE_IMAGE} AS frontend-builder
 
 WORKDIR /app/frontend
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# 安装构建必备环境，防止 esbuild 报错
+RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
+
+RUN npm install -g pnpm
 
 # 只复制 package.json
 COPY frontend/package.json ./
 
-# 强制执行所有依赖脚本
-RUN pnpm install --no-frozen-lockfile --ignore-scripts=false
+# 使用最稳健的安装方式
+RUN pnpm install --no-frozen-lockfile
 
 # Copy source and build
 COPY frontend/ ./
@@ -51,7 +55,7 @@ RUN go mod download
 
 COPY backend/ ./
 
-# 将前端产物复制到后端指定的目录
+# 这里的路径一定要准
 COPY --from=frontend-builder /app/frontend/dist ./internal/web/dist
 
 # Build the binary
@@ -106,6 +110,5 @@ RUN chmod +x /app/docker-entrypoint.sh
 
 EXPOSE 8080
 
-# 移除了可能导致换行解析错误的 HEALTHCHECK，让部署更顺滑
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["/app/sub2api"]
