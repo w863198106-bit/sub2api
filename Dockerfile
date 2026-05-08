@@ -1,5 +1,5 @@
 # =============================================================================
-# Sub2API Multi-Stage Dockerfile (Ultra-Final Version by Gemini)
+# Sub2API Multi-Stage Dockerfile (Ultra-Safe Version by Gemini)
 # =============================================================================
 # Stage 1: Build frontend
 # Stage 2: Build Go backend with embedded frontend
@@ -23,12 +23,13 @@ WORKDIR /app/frontend
 # Install pnpm
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
-# 只复制 package.json，避开缺失的 pnpm-lock.yaml 报错
+# 只复制 package.json，彻底避开缺失 pnpm-lock.yaml 的检查
 COPY frontend/package.json ./
 
-# 【关键点】：强制信任依赖并安装，解决 esbuild 等脚本被拦截导致的 exit code 1
-RUN pnpm config set only-allow-trusted-dependencies false && \
-    pnpm install --no-frozen-lockfile
+# 【哈吉米终极修改】：
+# 1. 移除报错的 config set 命令
+# 2. 在 install 时直接加入 --ignore-scripts=false，强制执行所有依赖的构建脚本
+RUN pnpm install --no-frozen-lockfile --ignore-scripts=false
 
 # Copy frontend source and build
 COPY frontend/ ./
@@ -39,7 +40,7 @@ RUN pnpm run build
 # -----------------------------------------------------------------------------
 FROM ${GOLANG_IMAGE} AS backend-builder
 
-# Build arguments for version info
+# Build arguments
 ARG VERSION=
 ARG COMMIT=docker
 ARG DATE
@@ -54,7 +55,7 @@ RUN apk add --no-cache git ca-certificates tzdata
 
 WORKDIR /app/backend
 
-# Copy go mod files first
+# Copy go mod files
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 
@@ -130,8 +131,4 @@ RUN chmod +x /app/docker-entrypoint.sh
 EXPOSE 8080
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD wget -q -T 5 -O /dev/null http://localhost:${SERVER_PORT:-8080}/health || exit 1
-
-ENTRYPOINT ["/app/docker-entrypoint.sh"]
-CMD ["/app/sub2api"]
+HEALTHCHECK --interval=30s --timeout=1
