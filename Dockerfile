@@ -1,5 +1,5 @@
 # =============================================================================
-# Sub2API Multi-Stage Dockerfile
+# Sub2API Multi-Stage Dockerfile (Optimized by Gemini)
 # =============================================================================
 # Stage 1: Build frontend
 # Stage 2: Build Go backend with embedded frontend
@@ -23,9 +23,11 @@ WORKDIR /app/frontend
 # Install pnpm
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
-# Install dependencies first (better caching)
-COPY frontend/package.json frontend/pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
+# 【哈吉米修改点 1】：只复制 package.json，避开缺失的 pnpm-lock.yaml 报错
+COPY frontend/package.json ./
+
+# 【哈吉米修改点 2】：去掉 --frozen-lockfile，允许自动生成新的锁定信息
+RUN pnpm install --no-frozen-lockfile
 
 # Copy frontend source and build
 COPY frontend/ ./
@@ -58,11 +60,10 @@ RUN go mod download
 # Copy backend source first
 COPY backend/ ./
 
-# Copy frontend dist from previous stage (must be after backend copy to avoid being overwritten)
-COPY --from=frontend-builder /app/backend/internal/web/dist ./internal/web/dist
+# Copy frontend dist from previous stage
+COPY --from=frontend-builder /app/frontend/dist ./internal/web/dist
 
-# Build the binary (BuildType=release for CI builds, embed frontend)
-# Version precedence: build arg VERSION > cmd/server/VERSION
+# Build the binary
 RUN VERSION_VALUE="${VERSION}" && \
     if [ -z "${VERSION_VALUE}" ]; then VERSION_VALUE="$(tr -d '\r\n' < ./cmd/server/VERSION)"; fi && \
     DATE_VALUE="${DATE:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}" && \
@@ -74,7 +75,7 @@ RUN VERSION_VALUE="${VERSION}" && \
     ./cmd/server
 
 # -----------------------------------------------------------------------------
-# Stage 3: PostgreSQL Client (version-matched with docker-compose)
+# Stage 3: PostgreSQL Client
 # -----------------------------------------------------------------------------
 FROM ${POSTGRES_IMAGE} AS pg-client
 
@@ -101,8 +102,7 @@ RUN apk add --no-cache \
     libedit \
     && rm -rf /var/cache/apk/*
 
-# Copy pg_dump and psql from the same postgres image used in docker-compose
-# This ensures version consistency between backup tools and the database server
+# Copy tools from pg-client
 COPY --from=pg-client /usr/local/bin/pg_dump /usr/local/bin/pg_dump
 COPY --from=pg-client /usr/local/bin/psql /usr/local/bin/psql
 COPY --from=pg-client /usr/local/lib/libpq.so.5* /usr/local/lib/
@@ -114,24 +114,23 @@ RUN addgroup -g 1000 sub2api && \
 # Set working directory
 WORKDIR /app
 
-# Copy binary/resources with ownership to avoid extra full-layer chown copy
+# Copy binary/resources
 COPY --from=backend-builder --chown=sub2api:sub2api /app/sub2api /app/sub2api
 COPY --from=backend-builder --chown=sub2api:sub2api /app/backend/resources /app/resources
 
 # Create data directory
 RUN mkdir -p /app/data && chown sub2api:sub2api /app/data
 
-# Copy entrypoint script (fixes volume permissions then drops to sub2api)
+# Copy entrypoint script
 COPY deploy/docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN chmod +x /app/docker-entrypoint.sh
 
-# Expose port (can be overridden by SERVER_PORT env var)
+# Expose port
 EXPOSE 8080
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD wget -q -T 5 -O /dev/null http://localhost:${SERVER_PORT:-8080}/health || exit 1
 
-# Run the application (entrypoint fixes /app/data ownership then execs as sub2api)
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["/app/sub2api"]
