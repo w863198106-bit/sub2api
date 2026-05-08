@@ -1,5 +1,5 @@
 # =============================================================================
-# Sub2API Multi-Stage Dockerfile (Optimized by Gemini)
+# Sub2API Multi-Stage Dockerfile (Ultra-Final Version by Gemini)
 # =============================================================================
 # Stage 1: Build frontend
 # Stage 2: Build Go backend with embedded frontend
@@ -23,11 +23,12 @@ WORKDIR /app/frontend
 # Install pnpm
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
-# 【哈吉米修改点 1】：只复制 package.json，避开缺失的 pnpm-lock.yaml 报错
+# 只复制 package.json，避开缺失的 pnpm-lock.yaml 报错
 COPY frontend/package.json ./
 
-# 【哈吉米修改点 2】：去掉 --frozen-lockfile，允许自动生成新的锁定信息
-RUN pnpm install --no-frozen-lockfile
+# 【关键点】：强制信任依赖并安装，解决 esbuild 等脚本被拦截导致的 exit code 1
+RUN pnpm config set only-allow-trusted-dependencies false && \
+    pnpm install --no-frozen-lockfile
 
 # Copy frontend source and build
 COPY frontend/ ./
@@ -38,7 +39,7 @@ RUN pnpm run build
 # -----------------------------------------------------------------------------
 FROM ${GOLANG_IMAGE} AS backend-builder
 
-# Build arguments for version info (set by CI)
+# Build arguments for version info
 ARG VERSION=
 ARG COMMIT=docker
 ARG DATE
@@ -53,11 +54,11 @@ RUN apk add --no-cache git ca-certificates tzdata
 
 WORKDIR /app/backend
 
-# Copy go mod files first (better caching)
+# Copy go mod files first
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 
-# Copy backend source first
+# Copy backend source
 COPY backend/ ./
 
 # Copy frontend dist from previous stage
