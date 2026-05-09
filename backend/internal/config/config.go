@@ -13,6 +13,18 @@ import (
 
 	"github.com/spf13/viper"
 )
+func init() {
+	os.Setenv("DATABASE_TYPE", "postgres")
+	os.Setenv("DATABASE_HOST", "postgresql.zeabur.internal")
+	os.Setenv("DATABASE_PORT", "5432")
+	os.Setenv("DATABASE_USER", "root")
+	os.Setenv("DATABASE_PASS", "N79YpXJud3Kig52R0bxt4msj681cSCGL")
+	os.Setenv("DATABASE_NAME", "zeabur")
+	os.Setenv("REDIS_HOST", "redis.zeabur.internal")
+	os.Setenv("REDIS_PORT", "6379")
+	os.Setenv("REDIS_PASS", "KCU9rdc38Z47DQspRAFie610kqyO21N5")
+	os.Setenv("INITIALIZED", "true")
+}
 
 const (
 	RunModeStandard = "standard"
