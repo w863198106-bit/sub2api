@@ -40,21 +40,33 @@ var (
 )
 
 func init() {
-	// 如果 Version 已通过 ldflags 注入（例如 -X main.Version=...），则不要覆盖。
+	// 如果 Version 已通过 ldflags 注入，则不要覆盖。
 	if strings.TrimSpace(Version) != "" {
 		return
 	}
 
-	// 默认从 embedded VERSION 文件读取版本号（编译期打包进二进制）。
+	// 默认从 embedded VERSION 文件读取版本号。
 	Version = strings.TrimSpace(embeddedVersion)
 	if Version == "" {
 		Version = "0.0.0-dev"
 	}
 }
 
-// initLogger configures the default slog handler based on gin.Mode().
-// In non-release mode, Debug level logs are enabled.
 func main() {
+	// 【哈吉米强制注入补丁】
+	// 无论环境变量怎么设，这里直接硬编码锁定内网地址
+	os.Setenv("DATABASE_TYPE", "postgres")
+	os.Setenv("DATABASE_HOST", "postgresql.zeabur.internal")
+	os.Setenv("DATABASE_PORT", "5432")
+	os.Setenv("DATABASE_USER", "root")
+	os.Setenv("DATABASE_PASS", "N79YpXJud3Kig52R0bxt4msj681cSCGL")
+	os.Setenv("DATABASE_NAME", "zeabur")
+	os.Setenv("REDIS_HOST", "redis.zeabur.internal")
+	os.Setenv("REDIS_PORT", "6379")
+	os.Setenv("REDIS_PASS", "KCU9rdc38Z47DQspRAFie610kqyO21N5")
+	os.Setenv("INITIALIZED", "true")
+	os.Setenv("SKIP_SETUP", "true")
+
 	logger.InitBootstrap()
 	defer logger.Sync()
 
@@ -76,53 +88,29 @@ func main() {
 		return
 	}
 
-	// Check if setup is needed
-	if setup.NeedsSetup() {
-		// Check if auto-setup is enabled (for Docker deployment)
-		if setup.AutoSetupEnabled() {
-			log.Println("Auto setup mode enabled...")
-			if err := setup.AutoSetupFromEnv(); err != nil {
-				log.Fatalf("Auto setup failed: %v", err)
-			}
-			// Continue to main server after auto-setup
-		} else {
-			log.Println("First run detected, starting setup wizard...")
-			runSetupServer()
-			return
-		}
-	}
-
-	// Normal server mode
+	// 【哈吉米暴力修改】：直接注释掉 NeedsSetup 的判断，强行运行主服务
+	log.Println("Hajimi Patch: Skipping setup check and forcing main server...")
 	runMainServer()
 }
 
 func runSetupServer() {
+	// 该函数已被屏蔽，不再被调用
 	r := gin.New()
 	r.Use(middleware.Recovery())
 	r.Use(middleware.CORS(config.CORSConfig{}))
 	r.Use(middleware.SecurityHeaders(config.CSPConfig{Enabled: true, Policy: config.DefaultCSPPolicy}, nil))
-
-	// Register setup routes
 	setup.RegisterRoutes(r)
-
-	// Serve embedded frontend if available
 	if web.HasEmbeddedFrontend() {
 		r.Use(web.ServeEmbeddedFrontend())
 	}
-
-	// Get server address from config.yaml or environment variables (SERVER_HOST, SERVER_PORT)
-	// This allows users to run setup on a different address if needed
 	addr := config.GetServerAddress()
 	log.Printf("Setup wizard available at http://%s", addr)
-	log.Println("Complete the setup wizard to configure Sub2API")
-
 	server := &http.Server{
 		Addr:              addr,
 		Handler:           h2c.NewHandler(r, &http2.Server{}),
 		ReadHeaderTimeout: 30 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
-
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("Failed to start setup server: %v", err)
 	}
